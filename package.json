@@ -19,7 +19,7 @@
     "release": "yarn build && node release.js"
   },
   "dependencies": {
-    "chalk": "5.4.1",
+    "chalk": "^4.0.0",
     "cli-progress": "3.12.0",
     "commander": "^11.0.0",
     "fast-glob": "3.3.3",

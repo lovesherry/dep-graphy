@@ -24,4 +24,3 @@
 ```bash
 npm install -D dep-graphy
 dep-graphy
-
