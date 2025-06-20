@@ -11,7 +11,7 @@ export async function analyzeComponentEntry(entryPath: string, framework: Framew
 
   if (framework === 'vue') {
     resolver = resolveVueDependencies;
-  } else if (framework === 'react') {
+  } else if (framework === 'next' || framework === 'react' || framework === 'taro') {
     resolver = resolveReactDependencies;
   }
 

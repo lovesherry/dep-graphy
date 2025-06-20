@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import chalk from 'chalk';
 import { DetectedEntry, FrameworkType } from '../types';
 
 function fileExists(p: string): boolean {
@@ -23,12 +22,15 @@ function hasDep(pkg: Record<string, any>, dep: string): boolean {
 }
 
 function detectFramework(pkg: Record<string, any>): FrameworkType {
+  if (hasDep(pkg, 'next')) return 'next';
+  if (hasDep(pkg, 'nuxt')) return 'nuxt';
+  if (hasDep(pkg, '@tarojs/taro')) return 'taro';
   if (hasDep(pkg, 'react')) return 'react';
   if (hasDep(pkg, 'vue')) return 'vue';
   return 'unknown';
 }
 
-function resolveWebpack(): DetectedEntry | null {
+function resolveWebpack(framework: FrameworkType): DetectedEntry | null {
   const files = ['webpack.config.js', 'webpack.config.ts'];
   for (const file of files) {
     if (!fileExists(file)) continue;
@@ -41,9 +43,8 @@ function resolveWebpack(): DetectedEntry | null {
     else if (Array.isArray(entry)) entries = entry;
     else if (typeof entry === 'object') entries = Object.values(entry).flat() as string[];
 
-    const pkg = readPackageJson();
     return {
-      framework: detectFramework(pkg),
+      framework,
       tool: 'webpack',
       entries: entries.map(e => path.resolve(e)),
     };
@@ -51,14 +52,32 @@ function resolveWebpack(): DetectedEntry | null {
   return null;
 }
 
+function resolveVite(framework: FrameworkType): DetectedEntry | null {
+  const files = ['vite.config.ts', 'vite.config.js'];
+  for (const file of files) {
+    if (!fileExists(file)) continue;
+    const config = require(path.resolve(file));
+    const input = config?.build?.rollupOptions?.input;
+    if (!input) continue;
+
+    let entries: string[] = [];
+    if (typeof input === 'string') entries = [input];
+    else if (Array.isArray(input)) entries = input;
+    else if (typeof input === 'object') entries = Object.values(input) as string[];
+
+    return {
+      framework,
+      tool: 'vite',
+      entries: entries.map(e => path.resolve(e)),
+    };
+  }
+  return null;
+}
+
 function resolveNext(): DetectedEntry | null {
-  const pkg = readPackageJson();
-  if (!hasDep(pkg, 'next')) return null;
-
   const entries: string[] = [];
-  const extensions = ['.tsx', '.ts'];
-
-  const possibleDirs = ['app', 'pages', path.join('src', 'app'), path.join('src', 'pages')];
+  const extensions = ['.tsx'];
+  const dirs = ['app', 'pages', path.join('src', 'app'), path.join('src', 'pages')];
 
   const walk = (dir: string) => {
     if (!fs.existsSync(dir)) return;
@@ -72,53 +91,24 @@ function resolveNext(): DetectedEntry | null {
     }
   };
 
-  let found = false;
-  for (const dir of possibleDirs) {
+  for (const dir of dirs) {
     if (fs.existsSync(dir)) {
       walk(dir);
-      found = true;
-      break; // 只匹配一个即可，避免重复
+      break;
     }
   }
 
-  if (!found || entries.length === 0) return null;
+  if (entries.length === 0) return null;
 
   return {
-    framework: detectFramework(pkg),
-    tool: 'next',
+    framework: 'next',
+    tool: 'unknown',
     entries,
   };
 }
 
-function resolveVite(): DetectedEntry | null {
-  const files = ['vite.config.ts', 'vite.config.js'];
-  for (const file of files) {
-    if (!fileExists(file)) continue;
-    const config = require(path.resolve(file));
-    const input = config?.build?.rollupOptions?.input;
-    if (!input) continue;
-
-    let entries: string[] = [];
-    if (typeof input === 'string') entries = [input];
-    else if (Array.isArray(input)) entries = input;
-    else if (typeof input === 'object') entries = Object.values(input) as string[];
-
-    const pkg = readPackageJson();
-    return {
-      framework: detectFramework(pkg),
-      tool: 'vite',
-      entries: entries.map(e => path.resolve(e)),
-    };
-  }
-  return null;
-}
-
 function resolveTaro(): DetectedEntry | null {
-  const pkg = readPackageJson();
-  if (!hasDep(pkg, '@tarojs/taro')) return null;
-
   const entries: string[] = [];
-
   const appPaths = ['src/app.tsx', 'src/app.ts'];
   for (const p of appPaths) {
     const full = path.resolve(p);
@@ -148,21 +138,40 @@ function resolveTaro(): DetectedEntry | null {
     } catch { }
   }
 
-  return {
-    framework: detectFramework(pkg),
-    tool: 'taro',
-    entries,
-  };
+  return entries.length
+    ? {
+      framework: 'taro',
+      tool: 'unknown',
+      entries,
+    }
+    : null;
 }
 
-export async function detectEntryFiles(): Promise<DetectedEntry> {
-  return (
-    resolveNext() ||
-    resolveWebpack() ||
-    resolveVite() ||
-    resolveTaro() ||
-    (() => {
-      throw new Error(chalk.red('❌ Unable to detect entry files. Please check your project structure.'));
-    })()
-  );
+export async function detectEntryFiles(preferredFramework?: FrameworkType): Promise<DetectedEntry> {
+  const pkg = readPackageJson();
+  const framework = preferredFramework || detectFramework(pkg)
+
+  switch (framework) {
+    case 'next': {
+      const res = resolveNext();
+      if (res) return res;
+      throw new Error('❌ Could not detect Next.js entries.');
+    }
+    case 'nuxt': {
+      throw new Error('❌ Nuxt.js support is not implemented yet.');
+    }
+    case 'taro': {
+      const res = resolveTaro();
+      if (res) return res;
+      throw new Error('❌ Could not detect Taro entries.');
+    }
+    case 'react':
+    case 'vue': {
+      const res = resolveWebpack(framework) || resolveVite(framework);
+      if (res) return res;
+      throw new Error('❌ Could not detect entries via Webpack or Vite.');
+    }
+    default:
+      throw new Error('❌ Unable to detect entry files. Please check your project structure.');
+  }
 }

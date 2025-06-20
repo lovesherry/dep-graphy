@@ -5,8 +5,8 @@ export type AnalyzedDependencyNode = {
   deps?: AnalyzedDependencyNode[];  // 子依赖（递归）
 };
 
-export type FrameworkType = 'react' | 'vue' | 'svelte' | 'solid' | 'unknown';
-export type BuildTool = 'webpack' | 'vite' | 'next' | 'taro' | 'nuxt' | 'other';
+export type FrameworkType = 'next' | 'nuxt' | 'react' | 'vue' | 'taro' | 'unknown';
+export type BuildTool = 'webpack' | 'vite' | 'turbopack' | 'unknown';
 
 export interface DetectedEntry {
   framework: FrameworkType;
