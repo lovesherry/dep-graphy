@@ -57,19 +57,31 @@ function resolveNext(): DetectedEntry | null {
 
   const entries: string[] = [];
   const extensions = ['.tsx', '.ts'];
+
+  const possibleDirs = ['app', 'pages', path.join('src', 'app'), path.join('src', 'pages')];
+
   const walk = (dir: string) => {
     if (!fs.existsSync(dir)) return;
     for (const file of fs.readdirSync(dir)) {
       const fullPath = path.join(dir, file);
       const stat = fs.statSync(fullPath);
       if (stat.isDirectory()) walk(fullPath);
-      else if (extensions.some(ext => fullPath.endsWith(ext))) entries.push(path.resolve(fullPath));
+      else if (extensions.some(ext => fullPath.endsWith(ext))) {
+        entries.push(path.resolve(fullPath));
+      }
     }
   };
 
-  if (fs.existsSync('app')) walk('app');
-  else if (fs.existsSync('pages')) walk('pages');
-  else return null;
+  let found = false;
+  for (const dir of possibleDirs) {
+    if (fs.existsSync(dir)) {
+      walk(dir);
+      found = true;
+      break; // 只匹配一个即可，避免重复
+    }
+  }
+
+  if (!found || entries.length === 0) return null;
 
   return {
     framework: detectFramework(pkg),
