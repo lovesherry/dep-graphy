@@ -17,7 +17,7 @@
 - [ ] Nuxt（Vue）
 - [ ] Vue & React（Vite / Webpack）
 - [x] Monorepo（Yarn Workspaces，需手动指定 `--project` 或 `-p <路径>`）
-- [ ] Test Examples for dev.
+- [ ] Test Examples for dev
 
 ## 📦 安装与使用
 
