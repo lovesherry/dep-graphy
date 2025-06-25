@@ -1,14 +1,10 @@
 // src/utils/pathClassifier.ts
 import path from 'path';
 import ts from 'typescript';
-import fs from 'fs';
-
-const cwd = process.cwd();
 
 
-
-export function getRelativePath(filePath: string): string {
-  return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
+export function getRelativePath(absPath: string, baseDir: string = process.cwd()) {
+  return path.relative(baseDir, absPath).replace(/\\/g, '/');
 }
 
 

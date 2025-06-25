@@ -1,40 +1,48 @@
+import path from 'path';
+import fs from 'fs';
 import cliProgress from 'cli-progress';
 import { Command } from 'commander';
-import { analyzeComponentEntry } from './analyzer/componentAnalyzer';
+import { analyzeComponentEntries } from './analyzer/componentAnalyzer';
 import { detectEntryFiles } from './analyzer/entryResolver';
 import { renderAnalyzedHtml } from './output/htmlVisualizer';
 import { FrameworkType } from './types';
 
-const allowedFrameworks: FrameworkType[] = ['next', 'nuxt', 'react', 'vue', 'taro', 'unknown'];
 
-
-export function parseArgs(): { framework?: FrameworkType } {
+export function parseArgs(): { defaultFramework?: FrameworkType } {
   const program = new Command();
+
   program
-    .option('-f, --framework <framework>', 'specify the framework', (value) => {
-      if (!allowedFrameworks.includes(value as FrameworkType)) {
-        console.warn(`⚠️ Unsupported framework "${value}". Falling back to auto-detection.`);
-        return undefined;
-      }
-      return value;
-    });
+    .option('-f, --framework <framework>', 'specify the framework')
+    .option('-p, --project <path>', 'specify the project root');
+
   program.parse(process.argv);
   const options = program.opts();
-  return {
-    framework: options.framework,
-  };
+
+  const resolvedProject = options.project
+    ? path.resolve(process.cwd(), options.project)
+    : process.cwd();
+
+  if (!fs.existsSync(resolvedProject)) {
+    console.error(`❌ Project path "${resolvedProject}" does not exist.`);
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(path.resolve(resolvedProject, 'tsconfig.json'))) {
+    throw new Error(`❌ tsconfig.json not found in ${resolvedProject}`);
+  }
+
+  process.env.PROJECT_DIR = resolvedProject;
+  process.env.ROOT_DIR = process.cwd();
+
+  console.log(`📁 Analyzing project at: ${resolvedProject}`);
+
+  return { defaultFramework: options.framework as FrameworkType };
 }
 
-
-async function main() {
+function main() {
   try {
-    const { framework } = parseArgs();
-    const { framework: detectedFramework, entries } = await detectEntryFiles(framework);
-    console.log(
-      'Detected entries:\n' +
-      entries.map((entry, i) => `  ${i + 1}. ${entry}`).join('\n')
-    );
-    const results = [];
+    const { defaultFramework } = parseArgs();
+    const { entries } = detectEntryFiles(defaultFramework);
     console.time('Total analyze time');
     const progressBar = new cliProgress.SingleBar({
       format: 'Analyzing [{bar}] {percentage}% | {value}/{total} entries',
@@ -44,18 +52,12 @@ async function main() {
     }, cliProgress.Presets.shades_classic);
 
     progressBar.start(entries.length, 0);
-
-    for (const entry of entries) {
-      const tree = await analyzeComponentEntry(entry, detectedFramework);
-      results.push(tree);
+    const results = analyzeComponentEntries(entries, () => {
       progressBar.increment();
-    }
-
+    })
     progressBar.stop();
-
     console.timeEnd('Total analyze time');
-
-    await renderAnalyzedHtml(results);
+    renderAnalyzedHtml(results);
     console.log('✅ dependency-graph.html has been generated.');
   } catch (error) {
     console.error('❌ Failed to generate dependency graph:', error);

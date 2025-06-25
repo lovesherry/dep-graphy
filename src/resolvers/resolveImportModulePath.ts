@@ -2,32 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
 import { getTsconfigPaths } from '../utils/pathClassifier';
+import { fileExists, getProjectRoot, isExternalDependency } from '../utils/common';
 
-const projectRoot = process.cwd();
-const pkgJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
-const dependencies = {
-  ...pkgJson.dependencies,
-  ...pkgJson.devDependencies,
-};
 
-const { compilerOptions, baseUrl, paths } = getTsconfigPaths(path.join(projectRoot, 'tsconfig.json'));
 const EXTENSIONS = ['.ts', '.tsx'];
 const resolveCache = new Map<string, string | null>();
 
-/**
- * 判断是否是实际存在的文件
- */
-function isRealFile(filePath: string): boolean {
-  try {
-    return fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/**
- * 尝试解析 basePath 为存在的文件（带后缀或 index 文件）
- */
 function resolveToExistingFile(basePath: string): string | null {
   if (resolveCache.has(basePath)) return resolveCache.get(basePath)!;
 
@@ -37,18 +17,16 @@ function resolveToExistingFile(basePath: string): string | null {
   if (ext) {
     candidates.push(basePath);
   } else {
-    // 尝试补全扩展名
     for (const e of EXTENSIONS) {
       candidates.push(`${basePath}${e}`);
     }
-    // 尝试 index 文件
     for (const e of EXTENSIONS) {
       candidates.push(path.join(basePath, `index${e}`));
     }
   }
 
   for (const candidate of candidates) {
-    if (isRealFile(candidate)) {
+    if (fileExists(candidate)) {
       resolveCache.set(basePath, candidate);
       return candidate;
     }
@@ -59,16 +37,19 @@ function resolveToExistingFile(basePath: string): string | null {
 }
 
 /**
- * 将 importSource 解析为绝对路径（支持第三方、路径别名、相对路径）
+ * 将 importSource 解析为绝对路径或标记外部依赖
  */
 export function resolveImportModulePath(importSource: string, containingFile: string): string | null {
-  // ✅ 第三方依赖
-  if (dependencies[importSource]) {
-    const resolved = path.resolve(projectRoot, 'node_modules', importSource);
-    return fs.existsSync(resolved) ? resolved : null;
+  const projectRoot = getProjectRoot();
+  const { compilerOptions, baseUrl, paths } = getTsconfigPaths(path.join(projectRoot, 'tsconfig.json'));
+
+  // 判断是否 external 依赖
+  if (isExternalDependency(importSource)) {
+    // 返回特殊标记，外部依赖不用解析真实路径
+    return `__EXTERNAL__::${importSource}`;
   }
 
-  // ✅ 路径别名
+  // 解析路径别名
   if (paths) {
     for (const alias in paths) {
       const aliasPattern = alias.replace(/\*$/, '');
@@ -81,13 +62,13 @@ export function resolveImportModulePath(importSource: string, containingFile: st
     }
   }
 
-  // ✅ 相对路径 / 绝对路径模块
+  // 使用 ts 内置模块解析
   const result = ts.resolveModuleName(importSource, containingFile, compilerOptions, ts.sys);
   if (result.resolvedModule?.resolvedFileName) {
     return result.resolvedModule.resolvedFileName;
   }
 
-  // ✅ 兜底处理：像 .scss / .css / .svg / .png 等实际存在但不是 TS 模块的
+  // 兜底尝试本地文件路径
   try {
     const importerDir = path.dirname(containingFile);
     const fullPath = path.resolve(importerDir, importSource);
@@ -95,7 +76,7 @@ export function resolveImportModulePath(importSource: string, containingFile: st
       return fullPath;
     }
   } catch {
-    return null;
+    // 忽略错误
   }
 
   return null;

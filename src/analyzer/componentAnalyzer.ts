@@ -1,82 +1,110 @@
-import { Project, SourceFile } from 'ts-morph';
 import path from 'path';
-import { AnalyzedDependencyNode, FrameworkType } from '../types';
+import { Project, SourceFile } from 'ts-morph';
+import { getProjectRoot } from '../utils/common';
 import { resolveReactDependencies } from '../resolvers/resolveReactDependencies';
 import { resolveVueDependencies } from '../resolvers/resolveVueDependencies';
+import { AnalyzedDependencyNode, FrameworkType } from '../types';
+import { getProjectStructure } from './projectStructure';
 import { getRelativePath } from '../utils/pathClassifier';
 
-export async function analyzeComponentEntry(entryPath: string, framework: FrameworkType): Promise<AnalyzedDependencyNode> {
+export interface AnalyzeContext {
+  project: Project;
+  resolver?: (sourceFile: SourceFile, absPath: string) => AnalyzedDependencyNode[];
+  projectRoot: string;
+  cache: Map<string, AnalyzedDependencyNode>;
+}
 
-  let resolver: ((sourceFile: SourceFile, absPath: string) => AnalyzedDependencyNode[]) | null = null;
+function getResolverByFramework(framework: FrameworkType | null) {
+  if (framework === 'vue') return resolveVueDependencies;
+  if (['next', 'react', 'taro'].includes(framework ?? '')) return resolveReactDependencies;
+  return undefined;
+}
 
-  if (framework === 'vue') {
-    resolver = resolveVueDependencies;
-  } else if (framework === 'next' || framework === 'react' || framework === 'taro') {
-    resolver = resolveReactDependencies;
-  }
-
+export function analyzeComponentEntries(entries: string[], callback?: () => void): AnalyzedDependencyNode[] {
+  const { framework } = getProjectStructure();
+  const projectRoot = getProjectRoot();
   const project = new Project({
-    tsConfigFilePath: path.resolve('tsconfig.json'),
+    tsConfigFilePath: path.resolve(projectRoot, 'tsconfig.json'),
     skipAddingFilesFromTsConfig: true,
   });
 
-  const visited = new Set<string>();
+  const context: AnalyzeContext = {
+    project,
+    resolver: getResolverByFramework(framework),
+    projectRoot,
+    cache: new Map(),
+  };
 
-  async function walk(filePath: string, type: AnalyzedDependencyNode['type']): Promise<AnalyzedDependencyNode> {
-    const absPath = path.resolve(filePath);
-    const relPath = getRelativePath(absPath);
+  const result: AnalyzedDependencyNode[] = [];
 
-    if (visited.has(absPath)) {
-      return {
-        name: path.basename(absPath),
-        type,
-        filePath: relPath,
-        deps: [],
-      };
-    }
-    visited.add(absPath);
+  for (const entry of entries) {
+    const absPath = path.resolve(projectRoot, entry);
+    const relPath = getRelativePath(absPath, process.env.ROOT_DIR);
 
-    let sourceFile: SourceFile;
-    try {
-      sourceFile = project.addSourceFileAtPath(absPath);
-    } catch {
-      return {
-        name: path.basename(absPath),
-        type: 'unknown',
-        filePath: relPath,
-        deps: [],
-      };
-    }
-
-    const imports = resolver ? resolver(sourceFile, absPath) : [];
-    const deps: AnalyzedDependencyNode[] = [];
-
-    for (const imp of imports) {
-      const relDepPath = imp.filePath ? getRelativePath(imp.filePath) : '';
-      if (imp.filePath && ['component', 'hook', 'function', 'const'].includes(imp.type)) {
-        const child = await walk(imp.filePath, imp.type);
-        deps.push({
-          ...child,
-          name: imp.name,
-          filePath: relDepPath,
-        });
-      } else {
-        deps.push({
-          name: imp.name,
-          type: imp.type,
-          filePath: relDepPath,
-          deps: [],
-        });
-      }
-    }
-
-    return {
+    const node: AnalyzedDependencyNode = {
       name: path.basename(absPath),
-      type,
+      type: 'entry',
       filePath: relPath,
-      deps,
+      deps: collectDependencies(entry, 'entry', context),
     };
+
+    result.push(node);
+    callback?.()
   }
 
-  return await walk(entryPath, 'entry');
+  return result;
+}
+
+function collectDependencies(
+  filePath: string,
+  type: AnalyzedDependencyNode['type'],
+  context: AnalyzeContext
+): AnalyzedDependencyNode[] {
+  const { project, resolver, cache } = context;
+  const absPath = path.resolve(filePath);
+  // 检查缓存
+  if (cache.has(absPath)) {
+    return cache.get(absPath)?.deps || []; // 返回已有依赖树（被引用）
+  }
+
+  let sourceFile: SourceFile;
+  try {
+    sourceFile = project.addSourceFileAtPath(absPath);
+  } catch {
+    return [];
+  }
+
+  const node: AnalyzedDependencyNode = {
+    name: path.basename(absPath),
+    type,
+    filePath,
+    deps: [],
+  };
+
+  // 写入缓存（先放进去避免递归死循环）
+  cache.set(absPath, node);
+
+  const imports = resolver ? resolver(sourceFile, absPath) : [];
+
+  for (const imp of imports) {
+    if (!imp.filePath || imp.filePath === absPath) continue;
+
+    const relDepPath = getRelativePath(imp.filePath, process.env.ROOT_DIR);
+
+    const childNode: AnalyzedDependencyNode = {
+      name: imp.name,
+      type: imp.type,
+      filePath: relDepPath,
+      deps: [],
+    };
+
+    // 构建递归依赖（组件、hook、函数、const）
+    if (['component', 'hook', 'function', 'const'].includes(imp.type)) {
+      childNode.deps = collectDependencies(imp.filePath, imp.type, context);
+    }
+
+    node.deps.push(childNode);
+  }
+
+  return node.deps;
 }

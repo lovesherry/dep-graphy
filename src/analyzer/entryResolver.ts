@@ -1,40 +1,22 @@
 import fs from 'fs';
 import path from 'path';
-import { DetectedEntry, FrameworkType } from '../types';
+import { BuildTool, DetectedEntry, FrameworkType } from '../types';
+import { fileExists, getProjectRoot } from '../utils/common';
+import { getProjectStructure, initProjectStructure } from './projectStructure';
 
-function fileExists(p: string): boolean {
-  try {
-    return fs.statSync(p).isFile();
-  } catch {
-    return false;
-  }
+
+
+function resolvePath(projectRoot: string, relative: string): string {
+  return path.resolve(projectRoot, relative);
 }
 
-function readPackageJson(): Record<string, any> {
-  const pkgPath = path.resolve('package.json');
-  if (!fs.existsSync(pkgPath)) return {};
-  return JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-}
-
-function hasDep(pkg: Record<string, any>, dep: string): boolean {
-  const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-  return !!deps[dep];
-}
-
-function detectFramework(pkg: Record<string, any>): FrameworkType {
-  if (hasDep(pkg, 'next')) return 'next';
-  if (hasDep(pkg, 'nuxt')) return 'nuxt';
-  if (hasDep(pkg, '@tarojs/taro')) return 'taro';
-  if (hasDep(pkg, 'react')) return 'react';
-  if (hasDep(pkg, 'vue')) return 'vue';
-  return 'unknown';
-}
-
-function resolveWebpack(framework: FrameworkType): DetectedEntry | null {
+function resolveWebpack(): DetectedEntry['entries'] | null {
+  const projectRoot = getProjectRoot();
   const files = ['webpack.config.js', 'webpack.config.ts'];
   for (const file of files) {
-    if (!fileExists(file)) continue;
-    const config = require(path.resolve(file));
+    const full = resolvePath(projectRoot, file);
+    if (!fileExists(full)) continue;
+    const config = require(require.resolve(full, { paths: [projectRoot] }));
     const entry = config?.entry;
     if (!entry) continue;
 
@@ -42,21 +24,18 @@ function resolveWebpack(framework: FrameworkType): DetectedEntry | null {
     if (typeof entry === 'string') entries = [entry];
     else if (Array.isArray(entry)) entries = entry;
     else if (typeof entry === 'object') entries = Object.values(entry).flat() as string[];
-
-    return {
-      framework,
-      tool: 'webpack',
-      entries: entries.map(e => path.resolve(e)),
-    };
+    return entries.map(e => path.resolve(projectRoot, e))
   }
   return null;
 }
 
-function resolveVite(framework: FrameworkType): DetectedEntry | null {
+function resolveVite(): DetectedEntry['entries'] | null {
+  const projectRoot = getProjectRoot();
   const files = ['vite.config.ts', 'vite.config.js'];
   for (const file of files) {
-    if (!fileExists(file)) continue;
-    const config = require(path.resolve(file));
+    const full = resolvePath(projectRoot, file);
+    if (!fileExists(full)) continue;
+    const config = require(require.resolve(full, { paths: [projectRoot] }));
     const input = config?.build?.rollupOptions?.input;
     if (!input) continue;
 
@@ -65,16 +44,13 @@ function resolveVite(framework: FrameworkType): DetectedEntry | null {
     else if (Array.isArray(input)) entries = input;
     else if (typeof input === 'object') entries = Object.values(input) as string[];
 
-    return {
-      framework,
-      tool: 'vite',
-      entries: entries.map(e => path.resolve(e)),
-    };
+    return entries.map(e => path.resolve(projectRoot, e))
   }
   return null;
 }
 
-function resolveNext(): DetectedEntry | null {
+function resolveNext(): DetectedEntry['entries'] | null {
+  const projectRoot = getProjectRoot();
   const entries: string[] = [];
   const extensions = ['.tsx'];
   const dirs = ['app', 'pages', path.join('src', 'app'), path.join('src', 'pages')];
@@ -92,26 +68,24 @@ function resolveNext(): DetectedEntry | null {
   };
 
   for (const dir of dirs) {
-    if (fs.existsSync(dir)) {
-      walk(dir);
+    const fullDir = path.resolve(projectRoot, dir);
+    if (fs.existsSync(fullDir)) {
+      walk(fullDir);
       break;
     }
   }
 
   if (entries.length === 0) return null;
 
-  return {
-    framework: 'next',
-    tool: 'unknown',
-    entries,
-  };
+  return entries
 }
 
-function resolveTaro(): DetectedEntry | null {
+function resolveTaro(): DetectedEntry['entries'] | null {
+  const projectRoot = getProjectRoot();
   const entries: string[] = [];
   const appPaths = ['src/app.tsx', 'src/app.ts'];
   for (const p of appPaths) {
-    const full = path.resolve(p);
+    const full = resolvePath(projectRoot, p);
     try {
       if (fs.statSync(full).isFile()) entries.push(full);
     } catch { }
@@ -119,7 +93,7 @@ function resolveTaro(): DetectedEntry | null {
 
   const configFiles = ['src/app.config.ts', 'src/app.config.json'];
   for (const configFile of configFiles) {
-    const full = path.resolve(configFile);
+    const full = resolvePath(projectRoot, configFile);
     if (!fileExists(full)) continue;
 
     try {
@@ -131,7 +105,7 @@ function resolveTaro(): DetectedEntry | null {
           .split(',')
           .map(line => line.replace(/['"`]/g, '').trim())
           .filter(Boolean)
-          .map(p => path.resolve('src', `${p}.tsx`))
+          .map(p => resolvePath(projectRoot, 'src/' + p + '.tsx'))
           .filter(fileExists);
         entries.push(...pagePaths);
       }
@@ -139,39 +113,39 @@ function resolveTaro(): DetectedEntry | null {
   }
 
   return entries.length
-    ? {
-      framework: 'taro',
-      tool: 'unknown',
-      entries,
-    }
+    ? entries
     : null;
 }
 
-export async function detectEntryFiles(preferredFramework?: FrameworkType): Promise<DetectedEntry> {
-  const pkg = readPackageJson();
-  const framework = preferredFramework || detectFramework(pkg)
+const getEntryFiles = (framework: FrameworkType, buildTool: BuildTool): DetectedEntry['entries'] | null => {
+  if (framework === 'next') return resolveNext();
+  if (framework === 'nuxt') return null; // Nuxt.js support not implemented   yet
+  if (framework === 'taro') return resolveTaro();
+  if (buildTool === 'webpack') return resolveWebpack()
+  if (buildTool === 'vite') return resolveVite();
+  return null;
+}
 
-  switch (framework) {
-    case 'next': {
-      const res = resolveNext();
-      if (res) return res;
-      throw new Error('❌ Could not detect Next.js entries.');
-    }
-    case 'nuxt': {
+export function detectEntryFiles(
+  defaultFramework?: FrameworkType
+): DetectedEntry {
+  initProjectStructure(defaultFramework)
+  const { buildTool, framework } = getProjectStructure()
+  console.log(`Framework: ${framework} Build Tool: ${buildTool}`);
+  const entryFiles = getEntryFiles(framework, buildTool);
+  if (!entryFiles) {
+    if (framework === 'nuxt') {
       throw new Error('❌ Nuxt.js support is not implemented yet.');
     }
-    case 'taro': {
-      const res = resolveTaro();
-      if (res) return res;
-      throw new Error('❌ Could not detect Taro entries.');
-    }
-    case 'react':
-    case 'vue': {
-      const res = resolveWebpack(framework) || resolveVite(framework);
-      if (res) return res;
-      throw new Error('❌ Could not detect entries via Webpack or Vite.');
-    }
-    default:
-      throw new Error('❌ Unable to detect entry files. Please check your project structure.');
+    throw new Error(`❌ Could not detect entry files for ${framework} with ${buildTool}.`);
   }
+  console.log(
+    'Detected entries:\n' +
+    entryFiles.map((entry, i) => `  ${i + 1}. ${entry}`).join('\n')
+  );
+  return {
+    framework,
+    tool: buildTool,
+    entries: entryFiles,
+  };
 }

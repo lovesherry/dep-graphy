@@ -1,38 +1,53 @@
-// resolvers/resolveReactDependencies.ts
 import { SourceFile } from 'ts-morph';
 import path from 'path';
 import { AnalyzedDependencyNode } from '../types';
 import { resolveImportModulePath } from './resolveImportModulePath';
 import { shouldIgnore } from '../utils/compressIgnore';
 import { getOrAddSourceFile } from '../utils/getOrAddSourceFile';
+import { resolveSymbolType } from '../utils/resolveSymbolType';
 
+/**
+ * 解析指定文件的所有导入和导出依赖，构建 AnalyzedDependencyNode 列表
+ */
 export function resolveReactDependencies(
   sourceFile: SourceFile,
   importerPath: string
 ): AnalyzedDependencyNode[] {
   const dependencies: AnalyzedDependencyNode[] = [];
+  const project = sourceFile.getProject();
 
+  /**
+   * 处理单个模块导入
+   */
   const handleImport = (
     moduleSpecifier: string,
-    importedNames: string[],
+    importedNames: string[]
   ) => {
     const resolvedPath = resolveImportModulePath(moduleSpecifier, importerPath);
-    const relPath = resolvedPath ? path.relative(process.cwd(), resolvedPath) : moduleSpecifier;
 
-    if (!resolvedPath || resolvedPath.includes('node_modules') || shouldIgnore(resolvedPath)) {
-      const depType = classifyDependencyType(resolvedPath);
+    if (!resolvedPath || shouldIgnore(resolvedPath)) {
       dependencies.push({
         name: importedNames.join(', '),
-        type: depType,
-        filePath: relPath,
+        type: 'ignored',
+        filePath: resolvedPath ?? moduleSpecifier,
         deps: [],
       });
       return;
     }
 
-    const project = sourceFile.getProject();
-    const resolvedSourceFile = getOrAddSourceFile(project, resolvedPath);
+    if (resolvedPath.startsWith('__EXTERNAL__::')) {
+      const pkgName = resolvedPath.split('::')[1];
+      dependencies.push({
+        name: importedNames.join(', '),
+        type: 'external',
+        filePath: pkgName,
+        deps: [],
+      });
+      return;
+    }
 
+    const relPath = path.relative(process.cwd(), resolvedPath);
+    const resolvedSourceFile = getOrAddSourceFile(project, resolvedPath);
     if (!resolvedSourceFile) {
       dependencies.push({
         name: moduleSpecifier,
@@ -54,89 +69,45 @@ export function resolveReactDependencies(
     }
   };
 
+  // 普通 import
   for (const importDecl of sourceFile.getImportDeclarations()) {
-    const moduleSpecifier = importDecl.getModuleSpecifierValue();
+    if (importDecl.isTypeOnly()) continue;
 
-    const defaultImport = importDecl.getDefaultImport()?.getText();
+    const moduleSpecifier = importDecl.getModuleSpecifierValue();
+    if (!moduleSpecifier) continue;
+
+    const names: string[] = [];
+
+    const defaultImport = importDecl.getDefaultImport();
     if (defaultImport) {
-      handleImport(moduleSpecifier, [defaultImport]);
+      names.push(defaultImport.getText());
     }
 
-    const namedImports = importDecl.getNamedImports().map((i) => i.getName());
-    if (namedImports.length > 0) {
-      handleImport(moduleSpecifier, namedImports);
+    for (const namedImport of importDecl.getNamedImports()) {
+      names.push(namedImport.getName());
     }
 
     const nsImport = importDecl.getNamespaceImport();
     if (nsImport) {
-      const name = nsImport.getText();
-      handleImport(moduleSpecifier, [name]);
+      names.push(nsImport.getText());
+    }
+
+    if (names.length > 0) {
+      handleImport(moduleSpecifier, names);
     }
   }
 
+  // export from
   for (const exportDecl of sourceFile.getExportDeclarations()) {
     const moduleSpecifier = exportDecl.getModuleSpecifierValue();
-    if (moduleSpecifier) {
-      handleImport(moduleSpecifier, ['*']);
-    }
+    if (!moduleSpecifier) continue;
+
+    const names = exportDecl.isNamespaceExport()
+      ? ['*']
+      : exportDecl.getNamedExports().map((e) => e.getName()) || ['*'];
+
+    handleImport(moduleSpecifier, names);
   }
 
   return dependencies;
-}
-
-function classifyDependencyType(resolvedPath: string | null): AnalyzedDependencyNode['type'] {
-  if (!resolvedPath) return 'unknown';
-  if (shouldIgnore(resolvedPath)) return 'ignored';
-  if (resolvedPath.includes('node_modules')) return 'external';
-  return 'unknown'
-}
-
-function resolveSymbolType(
-  resolvedSourceFile: SourceFile,
-  importedName: string
-): AnalyzedDependencyNode['type'] {
-  const filePath = resolvedSourceFile.getFilePath();
-
-  if (/\.(png|jpe?g|svg|gif|webp|bmp|ico)$/.test(filePath)) return 'media';
-  if (/\.(scss|less|css|styl)$/.test(filePath)) return 'style';
-  if (/\.(jsx|tsx)$/.test(filePath)) return 'component';
-  if (/^use[A-Z]/.test(importedName)) return 'hook';
-
-  const exportedSymbols = resolvedSourceFile.getExportSymbols();
-  const matchedSymbol = exportedSymbols.find(
-    (s) => s.getName() === importedName || s.getAliasedSymbol()?.getName() === importedName
-  );
-
-  const symbol = matchedSymbol?.getAliasedSymbol() || matchedSymbol;
-  if (!symbol) return 'unknown';
-
-  const declarations = symbol.getDeclarations();
-  if (declarations.length === 0) return 'unknown';
-
-  const decl = declarations[0];
-  const kind = decl.getKindName();
-
-  if (kind === 'VariableDeclaration') {
-    const initializer = (decl as any).getInitializer?.();
-    const text = initializer?.getText?.() || '';
-    if (/React\.FC|React\.FunctionComponent/.test(text)) {
-      return 'component';
-    }
-    return 'const';
-  }
-
-  switch (kind) {
-    case 'EnumDeclaration':
-      return 'enum';
-    case 'InterfaceDeclaration':
-      return 'interface';
-    case 'TypeAliasDeclaration':
-      return 'type';
-    case 'FunctionDeclaration':
-      return 'function';
-    case 'ClassDeclaration':
-      return 'component';
-    default:
-      return 'unknown';
-  }
 }
