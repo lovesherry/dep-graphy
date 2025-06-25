@@ -12,8 +12,8 @@ export function parseArgs(): { defaultFramework?: FrameworkType } {
   const program = new Command();
 
   program
-    .option('-f, --framework <framework>', 'specify the framework')
-    .option('-p, --project <path>', 'specify the project root');
+    .option('-f, --framework <framework>', 'specify the framework (e.g., next, taro)')
+    .option('-p, --project <path>', 'Specify the project root directory, defaults to current working directory (e.g., client)');
 
   program.parse(process.argv);
   const options = program.opts();
