@@ -21,8 +21,6 @@
 
 ## 📦 安装与使用
 
-## 📦 安装与使用
-
 ```bash
 npm install -D dep-graphy
 dep-graphy
