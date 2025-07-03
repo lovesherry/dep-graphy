@@ -2,8 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
 import { getTsconfigPaths } from '../utils/pathClassifier';
-import { fileExists, getProjectRoot, isExternalDependency } from '../utils/common';
-
+import {
+  fileExists,
+  getProjectRoot,
+  isExternalDependency,
+} from '../utils/common';
 
 const EXTENSIONS = ['.ts', '.tsx'];
 const resolveCache = new Map<string, string | null>();
@@ -39,9 +42,14 @@ function resolveToExistingFile(basePath: string): string | null {
 /**
  * 将 importSource 解析为绝对路径或标记外部依赖
  */
-export function resolveImportModulePath(importSource: string, containingFile: string): string | null {
+export function resolveImportModulePath(
+  importSource: string,
+  containingFile: string
+): string | null {
   const projectRoot = getProjectRoot();
-  const { compilerOptions, baseUrl, paths } = getTsconfigPaths(path.join(projectRoot, 'tsconfig.json'));
+  const { compilerOptions, baseUrl, paths } = getTsconfigPaths(
+    path.join(projectRoot, 'tsconfig.json')
+  );
 
   // 判断是否 external 依赖
   if (isExternalDependency(importSource)) {
@@ -54,7 +62,10 @@ export function resolveImportModulePath(importSource: string, containingFile: st
     for (const alias in paths) {
       const aliasPattern = alias.replace(/\*$/, '');
       if (importSource.startsWith(aliasPattern)) {
-        const subPath = importSource.replace(aliasPattern, paths[alias][0].replace(/\*$/, ''));
+        const subPath = importSource.replace(
+          aliasPattern,
+          paths[alias][0].replace(/\*$/, '')
+        );
         const fullPath = path.resolve(projectRoot, baseUrl || '.', subPath);
         const filePath = resolveToExistingFile(fullPath);
         if (filePath) return filePath;
@@ -63,7 +74,12 @@ export function resolveImportModulePath(importSource: string, containingFile: st
   }
 
   // 使用 ts 内置模块解析
-  const result = ts.resolveModuleName(importSource, containingFile, compilerOptions, ts.sys);
+  const result = ts.resolveModuleName(
+    importSource,
+    containingFile,
+    compilerOptions,
+    ts.sys
+  );
   if (result.resolvedModule?.resolvedFileName) {
     return result.resolvedModule.resolvedFileName;
   }

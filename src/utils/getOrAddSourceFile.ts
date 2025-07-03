@@ -1,7 +1,10 @@
 // utils/getOrAddSourceFile.ts
 import { Project, SourceFile } from 'ts-morph';
 
-export function getOrAddSourceFile(project: Project, filePath: string): SourceFile | undefined {
+export function getOrAddSourceFile(
+  project: Project,
+  filePath: string
+): SourceFile | undefined {
   let sourceFile = project.getSourceFile(filePath);
   if (!sourceFile) {
     try {

@@ -19,8 +19,9 @@ const typeOrder = {
   unknown: 13, // 确保 unknown 在最后
 };
 
-function escapeHtml(text: string) {
-  return text.replace(/&/g, '&amp;')
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
@@ -31,10 +32,10 @@ function renderNode(node: AnalyzedDependencyNode, depth = 0): string {
   const indent = depth * 20;
   const children = (node.deps || [])
     .sort((a, b) => typeOrder[a.type] - typeOrder[b.type])
-    .map(dep => renderNode(dep, depth + 1))
+    .map((dep) => renderNode(dep, depth + 1))
     .join('\n');
 
-  const namePart = `${node.name} from ${node.filePath}`
+  const namePart = `${node.name} from ${node.filePath}`;
 
   return `
     <div class="dep-node" style="margin-left: ${indent}px">
@@ -45,11 +46,17 @@ function renderNode(node: AnalyzedDependencyNode, depth = 0): string {
   `;
 }
 
-export function renderAnalyzedHtml(roots: AnalyzedDependencyNode[], outputPath = 'dependency-graph.html') {
-  const body = roots.map(root => {
-    const entryPath = root.filePath ? path.relative(process.cwd(), root.filePath) : 'Unknown Entry';
+export function renderAnalyzedHtml(
+  roots: AnalyzedDependencyNode[],
+  outputPath = 'dependency-graph.html'
+): void {
+  const body = roots
+    .map((root) => {
+      const entryPath = root.filePath
+        ? path.relative(process.cwd(), root.filePath)
+        : 'Unknown Entry';
 
-    return `
+      return `
       <div class="entry-block">
         <div class="entry-header">${escapeHtml(entryPath)}</div>
         <div class="entry-deps">
@@ -57,7 +64,8 @@ export function renderAnalyzedHtml(roots: AnalyzedDependencyNode[], outputPath =
         </div>
       </div>
     `;
-  }).join('\n');
+    })
+    .join('\n');
 
   const html = `
     <html>

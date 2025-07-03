@@ -1,11 +1,17 @@
-// utils/packageUtils.ts
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 import fs from 'fs';
 import path from 'path';
 
-export const getProjectRoot = () => process.env.PROJECT_DIR || process.cwd()
+export const getProjectRoot = (): string =>
+  process.env.PROJECT_DIR || process.cwd();
 
-let cachedMergedPkg: Record<string, any> | null = null;
-function readPkg(pkgPath: string): Record<string, any> {
+let cachedMergedPkg: {
+  dependencies: Record<string, string>;
+} | null = null;
+function readPkg(pkgPath: string): {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+} {
   try {
     return fs.existsSync(pkgPath)
       ? JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
@@ -14,14 +20,15 @@ function readPkg(pkgPath: string): Record<string, any> {
     console.warn(`⚠️ Failed to read ${pkgPath}:`, err);
     return {};
   }
-};
+}
 
-export function readMergedPackageJson(): Record<string, any> {
+export function readMergedPackageJson(): NonNullable<typeof cachedMergedPkg> {
   if (cachedMergedPkg) return cachedMergedPkg;
   const rootPkg = readPkg(path.join(process.cwd(), 'package.json'));
-  const projectPkg = getProjectRoot() !== process.cwd() ?
-    readPkg(path.join(getProjectRoot(), 'package.json')) :
-    {};
+  const projectPkg =
+    getProjectRoot() !== process.cwd()
+      ? readPkg(path.join(getProjectRoot(), 'package.json'))
+      : {};
 
   cachedMergedPkg = {
     dependencies: {
@@ -41,7 +48,7 @@ export function isExternalDependency(importSource: string): boolean {
   const { dependencies } = readMergedPackageJson();
   if (dependencies[importSource]) return true;
   const [pkgName] = importSource.split('/');
-  return !!dependencies[pkgName]
+  return !!dependencies[pkgName];
 }
 
 export function fileExists(filePath: string): boolean {
@@ -56,8 +63,6 @@ export function hasFile(fileName: string, dir = process.cwd()): boolean {
   return fileExists(path.join(dir, fileName));
 }
 
-export const hasProjectFile = (filename: string) => {
+export const hasProjectFile = (filename: string): boolean => {
   return hasFile(filename, getProjectRoot());
-}
-
-
+};

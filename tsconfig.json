@@ -12,7 +12,6 @@
     "sourceMap": false,
     "declaration": false
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "eslint.config.mjs"]
 }

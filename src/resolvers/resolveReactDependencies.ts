@@ -22,7 +22,7 @@ export function resolveReactDependencies(
   const handleImport = (
     moduleSpecifier: string,
     importedNames: string[]
-  ) => {
+  ): void => {
     const resolvedPath = resolveImportModulePath(moduleSpecifier, importerPath);
 
     if (!resolvedPath || shouldIgnore(resolvedPath)) {

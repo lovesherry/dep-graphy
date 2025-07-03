@@ -3,24 +3,33 @@ import { Project, SourceFile } from 'ts-morph';
 import { getProjectRoot } from '../utils/common';
 import { resolveReactDependencies } from '../resolvers/resolveReactDependencies';
 import { resolveVueDependencies } from '../resolvers/resolveVueDependencies';
-import { AnalyzedDependencyNode, FrameworkType } from '../types';
+import { AnalyzedDependencyNode, FrameworkType, ResolveFunc } from '../types';
 import { getProjectStructure } from './projectStructure';
 import { getRelativePath } from '../utils/pathClassifier';
 
 export interface AnalyzeContext {
   project: Project;
-  resolver?: (sourceFile: SourceFile, absPath: string) => AnalyzedDependencyNode[];
+  resolver?: (
+    sourceFile: SourceFile,
+    absPath: string
+  ) => AnalyzedDependencyNode[];
   projectRoot: string;
   cache: Map<string, AnalyzedDependencyNode>;
 }
 
-function getResolverByFramework(framework: FrameworkType | null) {
+function getResolverByFramework(
+  framework: FrameworkType | null
+): ResolveFunc | undefined {
   if (framework === 'vue') return resolveVueDependencies;
-  if (['next', 'react', 'taro'].includes(framework ?? '')) return resolveReactDependencies;
+  if (['next', 'react', 'taro'].includes(framework ?? ''))
+    return resolveReactDependencies;
   return undefined;
 }
 
-export function analyzeComponentEntries(entries: string[], callback?: () => void): AnalyzedDependencyNode[] {
+export function analyzeComponentEntries(
+  entries: string[],
+  callback?: () => void
+): AnalyzedDependencyNode[] {
   const { framework } = getProjectStructure();
   const projectRoot = getProjectRoot();
   const project = new Project({
@@ -49,7 +58,7 @@ export function analyzeComponentEntries(entries: string[], callback?: () => void
     };
 
     result.push(node);
-    callback?.()
+    callback?.();
   }
 
   return result;

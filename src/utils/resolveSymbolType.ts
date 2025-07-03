@@ -1,6 +1,4 @@
-import {
-  SourceFile,
-} from 'ts-morph';
+import { SourceFile } from 'ts-morph';
 import path from 'path';
 import { AnalyzedDependencyNode } from '../types';
 
@@ -15,25 +13,30 @@ export function resolveSymbolType(
 
   const exportedSymbols = sourceFile.getExportSymbols();
   let matchedSymbol = exportedSymbols.find(
-    (s) => s.getName() === importedName || s.getAliasedSymbol()?.getName() === importedName
+    (s) =>
+      s.getName() === importedName ||
+      s.getAliasedSymbol()?.getName() === importedName
   );
 
   if (!matchedSymbol) {
-    const defaultExportSymbol = exportedSymbols.find((s) => s.getName() === 'default');
+    const defaultExportSymbol = exportedSymbols.find(
+      (s) => s.getName() === 'default'
+    );
     if (defaultExportSymbol) {
       matchedSymbol = defaultExportSymbol;
     }
   }
 
   const symbol = matchedSymbol?.getAliasedSymbol() || matchedSymbol;
-  if (!symbol) return fallbackType(sourceFile, importedName, 'symbol not found');
+  if (!symbol)
+    return fallbackType(sourceFile, importedName, 'symbol not found');
 
   const declarations = symbol.getDeclarations();
-  if (declarations.length === 0) return fallbackType(sourceFile, importedName, 'no declarations');
+  if (declarations.length === 0)
+    return fallbackType(sourceFile, importedName, 'no declarations');
 
   const decl = declarations[0];
   const kind = decl.getKindName();
-
 
   switch (kind) {
     case 'EnumDeclaration':
@@ -60,13 +63,20 @@ function fallbackType(
 ): AnalyzedDependencyNode['type'] {
   // const projectRoot = process.cwd();
   // const relativePath = path.relative(projectRoot, sourceFile.getFilePath());
-  // console.warn(`⚠️ Fallback type for "${importedName}" in ${relativePath}: ${reason}`);
-  return 'unknown'
+  console.warn(`⚠️ Fallback type for "${importedName}" : ${reason}`);
+  return 'unknown';
 }
 
-const handleVariableOrFuncImport = (importedName: string, relativePath: string, defaultType: 'const' | 'function' = 'const'): AnalyzedDependencyNode['type'] => {
-  if (/^[A-Z]/.test(importedName) && relativePath.endsWith('.tsx')) { return 'component'; }
-  if (/^use[A-Z]/.test(importedName)) { return 'hook'; }
+const handleVariableOrFuncImport = (
+  importedName: string,
+  relativePath: string,
+  defaultType: 'const' | 'function' = 'const'
+): AnalyzedDependencyNode['type'] => {
+  if (/^[A-Z]/.test(importedName) && relativePath.endsWith('.tsx')) {
+    return 'component';
+  }
+  if (/^use[A-Z]/.test(importedName)) {
+    return 'hook';
+  }
   return defaultType;
-}
-
+};

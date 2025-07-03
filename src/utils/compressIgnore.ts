@@ -3,7 +3,6 @@ import fs from 'fs';
 import path from 'path';
 import { getRelativePath } from './pathClassifier';
 
-
 const ignoreFile = path.resolve('.compressignore');
 const ignorer = ignore();
 
@@ -13,7 +12,6 @@ if (fs.existsSync(ignoreFile)) {
 }
 
 export const sharedIgnorer = ignorer;
-
 
 export function shouldIgnore(filePath: string): boolean {
   return sharedIgnorer.ignores(getRelativePath(filePath));
